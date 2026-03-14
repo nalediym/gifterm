@@ -5,7 +5,8 @@ use sha2::{Digest, Sha256};
 use std::fs;
 use std::io::{self, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::process::Command;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tempfile::NamedTempFile;
 
 /// Generate a unique image ID from current time (kitty supports u32 IDs).
@@ -280,10 +281,199 @@ fn play(meta: &Meta, frames: &[Vec<u8>]) -> io::Result<()> {
     Ok(())
 }
 
+// -- Terminal detection --
+
+/// Check if the terminal supports the kitty graphics protocol by sending
+/// a 1x1 query image and reading the response.
+fn check_kitty_support() -> bool {
+    // Quick check: TERM or TERM_PROGRAM often reveals kitty/wezterm
+    if let Ok(term) = std::env::var("TERM") {
+        if term.contains("kitty") {
+            return true;
+        }
+    }
+    if let Ok(prog) = std::env::var("TERM_PROGRAM") {
+        let p = prog.to_lowercase();
+        if p.contains("kitty") || p.contains("wezterm") {
+            return true;
+        }
+    }
+
+    // Send a graphics protocol query: 1x1 red pixel, action=query
+    // A compatible terminal responds with \x1b_G...OK...\x1b\\
+    let query = b"\x1b_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\x1b\\";
+
+    // We need raw terminal access to read the response
+    let tty = match fs::OpenOptions::new().read(true).write(true).open("/dev/tty") {
+        Ok(f) => f,
+        Err(_) => return false,
+    };
+
+    // Put terminal in raw mode to read the response
+    let fd = {
+        use std::os::unix::io::AsRawFd;
+        tty.as_raw_fd()
+    };
+
+    let old_termios = unsafe {
+        let mut t = std::mem::zeroed();
+        if libc::tcgetattr(fd, &mut t) != 0 {
+            return false;
+        }
+        t
+    };
+
+    let mut raw = old_termios;
+    unsafe {
+        libc::cfmakeraw(&mut raw);
+        raw.c_cc[libc::VMIN] = 0;
+        raw.c_cc[libc::VTIME] = 1; // 100ms timeout
+        libc::tcsetattr(fd, libc::TCSANOW, &raw);
+    }
+
+    // Write query
+    {
+        use std::os::unix::io::FromRawFd;
+        let mut writer = unsafe { fs::File::from_raw_fd(fd) };
+        let _ = writer.write_all(query);
+        let _ = writer.flush();
+        // Don't drop — we still need the fd
+        std::mem::forget(writer);
+    }
+
+    // Wait briefly then read response
+    std::thread::sleep(Duration::from_millis(150));
+
+    let mut response = vec![0u8; 256];
+    let n = unsafe { libc::read(fd, response.as_mut_ptr() as *mut libc::c_void, 256) };
+
+    // Restore terminal
+    unsafe {
+        libc::tcsetattr(fd, libc::TCSANOW, &old_termios);
+    }
+
+    if n > 0 {
+        let resp = String::from_utf8_lossy(&response[..n as usize]);
+        resp.contains("OK")
+    } else {
+        false
+    }
+}
+
+/// Find kitty binary path
+fn find_kitty() -> Option<PathBuf> {
+    // Common locations
+    let candidates = [
+        "/opt/homebrew/bin/kitty",
+        "/usr/local/bin/kitty",
+        "/usr/bin/kitty",
+        "/Applications/kitty.app/Contents/MacOS/kitty",
+    ];
+    for c in candidates {
+        if Path::new(c).exists() {
+            return Some(PathBuf::from(c));
+        }
+    }
+    // Try PATH
+    Command::new("which")
+        .arg("kitty")
+        .output()
+        .ok()
+        .and_then(|o| {
+            if o.status.success() {
+                Some(PathBuf::from(String::from_utf8_lossy(&o.stdout).trim()))
+            } else {
+                None
+            }
+        })
+}
+
+/// Prompt the user for yes/no
+fn prompt_yn(msg: &str) -> bool {
+    eprint!("{} [Y/n] ", msg);
+    io::stderr().flush().ok();
+    let mut input = String::new();
+    io::stdin().read_line(&mut input).ok();
+    let answer = input.trim().to_lowercase();
+    answer.is_empty() || answer == "y" || answer == "yes"
+}
+
+/// Offer to install kitty and re-launch inside it
+fn offer_kitty_install(args: &[String]) {
+    eprintln!("gifterm requires a terminal with kitty graphics protocol support.");
+    eprintln!("Supported terminals: kitty, WezTerm, Konsole (partial)\n");
+
+    // Check if kitty is already installed but we're not running in it
+    if let Some(kitty_path) = find_kitty() {
+        eprintln!("kitty is installed at {}", kitty_path.display());
+        if prompt_yn("Launch gifterm inside kitty?") {
+            let gifterm = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("gifterm"));
+            let status = Command::new(&kitty_path)
+                .arg("--hold")
+                .arg(&gifterm)
+                .args(&args[1..])
+                .status();
+            match status {
+                Ok(s) => std::process::exit(s.code().unwrap_or(0)),
+                Err(e) => {
+                    eprintln!("Failed to launch kitty: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+        std::process::exit(1);
+    }
+
+    // Offer to install
+    let is_mac = cfg!(target_os = "macos");
+    let is_linux = cfg!(target_os = "linux");
+
+    if is_mac {
+        eprintln!("Install kitty with Homebrew?");
+        if prompt_yn("  brew install --cask kitty") {
+            eprintln!("\nInstalling kitty...\n");
+            let status = Command::new("brew")
+                .args(["install", "--cask", "kitty"])
+                .status();
+            match status {
+                Ok(s) if s.success() => {
+                    eprintln!("\nkitty installed successfully!");
+                    if let Some(kitty_path) = find_kitty() {
+                        if prompt_yn("Launch gifterm inside kitty now?") {
+                            let gifterm = std::env::current_exe()
+                                .unwrap_or_else(|_| PathBuf::from("gifterm"));
+                            let _ = Command::new(&kitty_path)
+                                .arg("--hold")
+                                .arg(&gifterm)
+                                .args(&args[1..])
+                                .status();
+                        }
+                    }
+                }
+                _ => eprintln!("Installation failed. Install manually: https://sw.kovidgoyal.net/kitty/"),
+            }
+        }
+    } else if is_linux {
+        eprintln!("Install kitty with:");
+        eprintln!("  curl -L https://sw.kovidgoyal.net/kitty/installer.sh | sh /dev/stdin");
+        eprintln!("\nOr use your package manager (apt install kitty, dnf install kitty, etc.)");
+    } else {
+        eprintln!("Download kitty from: https://sw.kovidgoyal.net/kitty/");
+    }
+
+    std::process::exit(1);
+}
+
 // -- Main --
 
 fn main() {
     let cli = Cli::parse();
+
+    // Check terminal compatibility before doing anything
+    if !cli.cache_only && !check_kitty_support() {
+        let args: Vec<String> = std::env::args().collect();
+        offer_kitty_install(&args);
+    }
 
     if !cli.gif.exists() {
         eprintln!("Not found: {}", cli.gif.display());
