@@ -1,0 +1,144 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# test-lane: Full quality gate for Rust projects
+# Equivalent of Rails bin/test-lane — runs the complete verification gauntlet.
+#
+# Usage:
+#   bin/test-lane           # full suite (check + clippy + test + doc + wasm)
+#   bin/test-lane --quick   # fast: check + test only
+#   bin/test-lane --wasm    # wasm compilation check only
+#
+# Exit codes:
+#   0  all gates passed
+#   1  a gate failed (output shows which)
+
+BOLD="\033[1m"
+RED="\033[31m"
+GREEN="\033[32m"
+YELLOW="\033[33m"
+CYAN="\033[36m"
+DIM="\033[2m"
+RESET="\033[0m"
+
+QUICK=false
+WASM_ONLY=false
+FAILED=0
+PASSED=0
+SKIPPED=0
+START_TIME=$(date +%s)
+
+for arg in "$@"; do
+  case "$arg" in
+    --quick) QUICK=true ;;
+    --wasm)  WASM_ONLY=true ;;
+  esac
+done
+
+gate() {
+  local name="$1"
+  shift
+  printf "${CYAN}${BOLD}[GATE]${RESET} %s ... " "$name"
+  if output=$("$@" 2>&1); then
+    printf "${GREEN}PASS${RESET}\n"
+    PASSED=$((PASSED + 1))
+    return 0
+  else
+    printf "${RED}FAIL${RESET}\n"
+    echo "$output" | tail -20
+    FAILED=$((FAILED + 1))
+    return 1
+  fi
+}
+
+skip() {
+  local name="$1"
+  local reason="$2"
+  printf "${CYAN}${BOLD}[GATE]${RESET} %s ... ${YELLOW}SKIP${RESET} ${DIM}(%s)${RESET}\n" "$name" "$reason"
+  SKIPPED=$((SKIPPED + 1))
+}
+
+printf "\n${BOLD}test-lane${RESET}  ${DIM}rust quality gauntlet${RESET}\n\n"
+
+# -- WASM-only mode --
+if $WASM_ONLY; then
+  if command -v wasm-pack &>/dev/null; then
+    gate "wasm32 compile check" cargo check --target wasm32-unknown-unknown --lib 2>&1 || true
+  else
+    skip "wasm32 compile check" "wasm-pack not installed"
+  fi
+  exit $FAILED
+fi
+
+# -- Gate 1: cargo check (fast type checking, catches most errors) --
+gate "cargo check" cargo check --all-targets || true
+
+# -- Gate 2: cargo fmt (formatting) --
+if ! $QUICK; then
+  if rustup component list --installed 2>/dev/null | grep -q rustfmt; then
+    gate "cargo fmt" cargo fmt -- --check || true
+  else
+    skip "cargo fmt" "rustfmt not installed"
+  fi
+fi
+
+# -- Gate 3: cargo clippy (linting) --
+if ! $QUICK; then
+  if rustup component list --installed 2>/dev/null | grep -q clippy; then
+    gate "cargo clippy" cargo clippy --all-targets -- -D warnings || true
+  else
+    skip "cargo clippy" "clippy not installed"
+  fi
+fi
+
+# -- Gate 4: cargo test (the main event) --
+if command -v cargo-nextest &>/dev/null; then
+  gate "cargo nextest" cargo nextest run || true
+else
+  gate "cargo test" cargo test || true
+fi
+
+# -- Gate 5: doc tests --
+if ! $QUICK; then
+  gate "cargo doc" cargo doc --no-deps --document-private-items 2>&1 || true
+fi
+
+# -- Gate 6: wasm compile check (can the lib cross-compile?) --
+if ! $QUICK; then
+  if rustup target list --installed 2>/dev/null | grep -q wasm32-unknown-unknown; then
+    # Only check the lib target — the bin has CLI deps that won't compile to wasm
+    gate "wasm32 compile check" cargo check --target wasm32-unknown-unknown --lib 2>&1 || true
+  else
+    skip "wasm32 compile check" "wasm32-unknown-unknown target not installed"
+  fi
+fi
+
+# -- Gate 7: cargo audit (security vulnerabilities) --
+if ! $QUICK; then
+  if command -v cargo-audit &>/dev/null; then
+    gate "cargo audit" cargo audit || true
+  else
+    skip "cargo audit" "cargo-audit not installed"
+  fi
+fi
+
+# -- Summary --
+END_TIME=$(date +%s)
+ELAPSED=$((END_TIME - START_TIME))
+
+printf "\n"
+if [ $FAILED -eq 0 ]; then
+  printf "  ${GREEN}${BOLD}✓${RESET} %d/%d gates passed" "$PASSED" "$((PASSED + SKIPPED))"
+  if [ $SKIPPED -gt 0 ]; then
+    printf " ${DIM}(%d skipped)${RESET}" "$SKIPPED"
+  fi
+  printf " ${DIM}in %ds${RESET}\n\n" "$ELAPSED"
+  exit 0
+else
+  printf "  ${RED}${BOLD}✗${RESET} %d failed, %d passed" "$FAILED" "$PASSED"
+  if [ $SKIPPED -gt 0 ]; then
+    printf " ${DIM}(%d skipped)${RESET}" "$SKIPPED"
+  fi
+  printf " ${DIM}in %ds${RESET}\n\n" "$ELAPSED"
+  exit 1
+fi

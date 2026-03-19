@@ -4,6 +4,24 @@ version = "0.1.0"
 edition = "2024"
 description = "Play GIF animations in kitty-protocol terminals"
 license = "MIT"
+repository = "https://github.com/nalediym/gifterm"
+readme = "README.md"
+keywords = ["gif", "terminal", "kitty", "graphics", "animation"]
+categories = ["command-line-utilities", "multimedia::images"]
+authors = ["Naledi Moleo"]
+
+[lib]
+name = "gifterm"
+path = "src/lib.rs"
+
+[[bin]]
+name = "gifterm"
+path = "src/main.rs"
+required-features = ["cli"]
+
+[features]
+default = ["cli"]
+cli = ["dep:clap"]
 
 [dependencies]
 image = "0.25"
@@ -11,7 +29,7 @@ sha2 = "0.10"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 base64 = "0.22"
-clap = { version = "4", features = ["derive"] }
+clap = { version = "4", features = ["derive"], optional = true }
 tempfile = "3"
 libc = "0.2"
 
