@@ -44,13 +44,19 @@ pub mod style {
     pub const RED: &str = "\x1b[38;2;212;87;78m";
 
     /// Print a styled gifterm status line: `gifterm <action> <detail>`
+    /// Action is right-padded to 9 chars for columnar alignment.
     pub fn status(action_color: &str, action: &str, detail: &str) {
-        eprintln!("{DIM}gifterm{RESET} {action_color}{action}{RESET} {detail}");
+        eprintln!("{DIM}gifterm{RESET} {action_color}{action:<9}{RESET} {detail}");
     }
 
-    /// Print a dim hint line (indented under errors).
+    /// Print an overwriting progress line (no newline, uses `\r`).
+    pub fn progress(action_color: &str, action: &str, detail: &str) {
+        eprint!("\r{DIM}gifterm{RESET} {action_color}{action:<9}{RESET} {detail}");
+    }
+
+    /// Print a dim hint line (indented under status lines).
     pub fn hint(msg: &str) {
-        eprintln!("{DIM}gifterm         {msg}{RESET}");
+        eprintln!("{DIM}gifterm           {msg}{RESET}");
     }
 }
 
@@ -259,7 +265,7 @@ pub fn decode_and_cache(
     let first = raw_frames[0].buffer();
     let (orig_w, orig_h) = (first.width(), first.height());
 
-    let needs_scale = max_width.map_or(false, |mw| orig_w > mw);
+    let needs_scale = max_width.is_some_and(|mw| orig_w > mw);
     let (out_w, out_h) = if let Some(mw) = max_width {
         if orig_w > mw {
             let scale = mw as f64 / orig_w as f64;
@@ -274,7 +280,7 @@ pub fn decode_and_cache(
     if needs_scale {
         style::status(
             style::TEAL,
-            "scaling ",
+            "scaling",
             &format!("{orig_w}x{orig_h} -> {out_w}x{out_h} (lanczos3)"),
         );
     }
@@ -296,14 +302,7 @@ pub fn decode_and_cache(
         frames.push(rgba.into_raw());
 
         if (i + 1) % 20 == 0 || i == raw_frames.len() - 1 {
-            eprint!(
-                "\r{DIM}gifterm{RESET} {TEAL}decoded {RESET} {}/{} frames",
-                i + 1,
-                raw_frames.len(),
-                DIM = style::DIM,
-                RESET = style::RESET,
-                TEAL = style::TEAL,
-            );
+            style::progress(style::TEAL, "decoded", &format!("{}/{} frames", i + 1, raw_frames.len()));
         }
     }
     eprintln!();
@@ -328,10 +327,10 @@ pub fn decode_and_cache(
         fs::write(cache_path.join(format!("{i:04}.rgba")), frame_data)?;
     }
 
-    let cache_kb: usize = frames.iter().map(|f: &Vec<u8>| f.len()).sum::<usize>() / 1024;
+    let cache_kb: usize = frames.iter().map(Vec::len).sum::<usize>() / 1024;
     style::status(
         style::GREEN,
-        "cached ",
+        "cached",
         &format!("{} frames ({} KB) -> {}", frames.len(), cache_kb, cache_path.display()),
     );
 
@@ -370,7 +369,7 @@ pub fn play(meta: &Meta, frames: &[Vec<u8>]) -> io::Result<()> {
     let w = meta.width;
     let h = meta.height;
 
-    style::status(style::TEAL, "sending ", &format!("{} frames, {}x{}", meta.n_frames, w, h));
+    style::status(style::TEAL, "sending", &format!("{} frames, {}x{}", meta.n_frames, w, h));
 
     // Frame 1: transmit + display
     send_via_file(
@@ -387,14 +386,7 @@ pub fn play(meta: &Meta, frames: &[Vec<u8>]) -> io::Result<()> {
             frame_data,
         )?;
         if (i + 1) % 10 == 0 || i == frames.len() - 2 {
-            eprint!(
-                "\r{DIM}gifterm{RESET} {TEAL}sending {RESET} {}/{} frames",
-                i + 2,
-                frames.len(),
-                DIM = style::DIM,
-                RESET = style::RESET,
-                TEAL = style::TEAL,
-            );
+            style::progress(style::TEAL, "sending", &format!("{}/{} frames", i + 2, frames.len()));
         }
     }
     eprintln!();

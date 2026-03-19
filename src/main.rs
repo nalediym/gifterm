@@ -39,12 +39,12 @@ fn prompt_yn(msg: &str) -> bool {
 
 /// Offer to install kitty and re-launch inside it
 fn offer_kitty_install(args: &[String]) {
-    style::status(style::RED, "error  ", "not a kitty-protocol terminal");
+    style::status(style::RED, "error", "not a kitty-protocol terminal");
     style::hint("supported: kitty, WezTerm, Konsole (partial)");
     eprintln!();
 
     if let Some(kitty_path) = find_kitty() {
-        style::status(style::TEAL, "found  ", &format!("kitty at {}", kitty_path.display()));
+        style::status(style::TEAL, "found", &format!("kitty at {}", kitty_path.display()));
         if prompt_yn("Launch gifterm inside kitty?") {
             let gifterm = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("gifterm"));
             let status = Command::new(&kitty_path)
@@ -55,7 +55,7 @@ fn offer_kitty_install(args: &[String]) {
             match status {
                 Ok(s) => std::process::exit(s.code().unwrap_or(0)),
                 Err(e) => {
-                    style::status(style::RED, "error  ", &format!("failed to launch kitty: {e}"));
+                    style::status(style::RED, "error", &format!("failed to launch kitty: {e}"));
                     std::process::exit(1);
                 }
             }
@@ -89,7 +89,7 @@ fn offer_kitty_install(args: &[String]) {
                     }
                 }
                 _ => {
-                    style::status(style::RED, "error  ", "installation failed");
+                    style::status(style::RED, "error", "installation failed");
                     style::hint("install manually: https://sw.kovidgoyal.net/kitty/");
                 }
             }
@@ -116,25 +116,25 @@ fn main() {
     }
 
     if !cli.gif.exists() {
-        style::status(style::RED, "error  ", &format!("file not found: {}", cli.gif.display()));
+        style::status(style::RED, "error", &format!("file not found: {}", cli.gif.display()));
         std::process::exit(1);
     }
 
     let (meta, frames) = match gifterm::load_frames(&cli.gif, cli.width) {
         Ok(v) => v,
         Err(e) => {
-            style::status(style::RED, "error  ", &format!("{e}"));
+            style::status(style::RED, "error", &format!("{e}"));
             std::process::exit(1);
         }
     };
 
     if cli.cache_only {
-        style::status(style::GREEN, "cached ", "not playing (--cache-only)");
+        style::status(style::GREEN, "cached", "not playing (--cache-only)");
         return;
     }
 
     if let Err(e) = gifterm::play(&meta, &frames) {
-        style::status(style::RED, "error  ", &format!("playback failed: {e}"));
+        style::status(style::RED, "error", &format!("playback failed: {e}"));
         std::process::exit(1);
     }
 }

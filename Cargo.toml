@@ -8,7 +8,7 @@ repository = "https://github.com/nalediym/gifterm"
 readme = "README.md"
 keywords = ["gif", "terminal", "kitty", "graphics", "animation"]
 categories = ["command-line-utilities", "multimedia::images"]
-authors = ["Naledi Moleo"]
+authors = ["Naledi Kekana"]
 
 [lib]
 name = "gifterm"

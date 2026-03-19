@@ -4,11 +4,15 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>gifterm — Play GIFs in your terminal</title>
-<meta name="description" content="Play animated GIFs natively in your terminal. Fire-and-forget animations that persist on the GPU. No browser. No electron. Just frames.">
+<meta name="description" content="Play animated GIFs natively in kitty-protocol terminals. Fire-and-forget animations that persist on the GPU. Single Rust binary.">
+<link rel="canonical" href="https://nalediym.github.io/gifterm">
 <meta property="og:title" content="gifterm — Play GIFs in your terminal">
-<meta property="og:description" content="Play animated GIFs natively in kitty-protocol terminals. Lofi vibes, pixel art, and ambient animation for your workspace.">
+<meta property="og:description" content="Fire-and-forget GIF animations in kitty-protocol terminals. One command, persistent GPU playback, content-addressed caching.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://nalediym.github.io/gifterm">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="gifterm — Play GIFs in your terminal">
+<meta name="twitter:description" content="Fire-and-forget GIF animations in kitty-protocol terminals. Single Rust binary.">
 <link rel="preconnect" href="https://api.fontshare.com">
 <link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,700,900&display=swap" rel="stylesheet">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -24,7 +28,6 @@
 
     --n950: #1A1816;
     --n900: #211F1C;
-    --n850: #2A2724;
     --n800: #343130;
     --n700: #4A4643;
     --n600: #6A6560;
@@ -74,6 +77,16 @@
 
   a { color: var(--primary); text-decoration: none; }
   a:hover { text-decoration: underline; }
+  code {
+    font-family: var(--font-code);
+    font-size: 0.8rem;
+    background: var(--n900);
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: var(--n300);
+  }
+
+  .divider { border-top: 1px solid var(--n800); }
 
   /* ---- Nav ---- */
   nav {
@@ -127,7 +140,7 @@
 
   /* ---- Hero ---- */
   .hero {
-    padding: 160px 0 100px;
+    padding: 160px 0 60px;
     text-align: center;
     position: relative;
     overflow: hidden;
@@ -146,17 +159,17 @@
   .hero h1 {
     font-family: var(--font-display);
     font-weight: 900;
-    font-size: clamp(3rem, 8vw, 5rem);
-    line-height: 1.05;
+    font-size: clamp(2.5rem, 7vw, 4.5rem);
+    line-height: 1.1;
     letter-spacing: -0.03em;
     margin-bottom: 16px;
     position: relative;
   }
   .hero h1 span { color: var(--primary); }
   .hero .subtitle {
-    font-size: 1.2rem;
+    font-size: 1.1rem;
     color: var(--n400);
-    max-width: 480px;
+    max-width: 520px;
     margin: 0 auto 32px;
     line-height: 1.6;
     position: relative;
@@ -221,29 +234,31 @@
     transition: border-color 0.15s;
   }
   .install-block:hover { border-color: var(--n600); }
+  .install-block:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
   .install-block .prompt { color: var(--primary); user-select: none; }
   .install-block .cmd { color: var(--n50); user-select: all; }
   .install-block .copied {
     position: absolute;
-    right: -70px;
+    top: -28px;
+    left: 50%;
+    transform: translateX(-50%);
     font-family: var(--font-body);
     font-size: 0.75rem;
     color: var(--success);
     opacity: 0;
     transition: opacity 0.2s;
+    white-space: nowrap;
   }
   .install-block .copied.show { opacity: 1; }
 
   /* ---- Terminal Demo ---- */
-  .terminal-section {
-    padding: 80px 0;
-  }
+  .terminal-section { padding: 40px 0 80px; }
   .terminal {
     background: var(--n950);
     border: 1px solid var(--n700);
     border-radius: 12px;
     overflow: hidden;
-    max-width: 720px;
+    max-width: 700px;
     margin: 0 auto;
   }
   .terminal-bar {
@@ -258,19 +273,13 @@
   .dot.r { background: var(--error); }
   .dot.y { background: var(--primary); }
   .dot.g { background: var(--success); }
-  .terminal-title {
-    flex: 1;
-    text-align: center;
-    font-family: var(--font-code);
-    font-size: 0.7rem;
-    color: var(--n600);
-  }
   .terminal-body {
     padding: 20px;
     font-family: var(--font-code);
-    font-size: 0.82rem;
+    font-size: 0.8rem;
     line-height: 1.8;
     color: var(--n400);
+    overflow-x: auto;
   }
   .terminal-body .p { color: var(--primary); user-select: none; }
   .terminal-body .c { color: var(--n50); }
@@ -278,6 +287,8 @@
   .terminal-body .teal { color: var(--secondary); }
   .terminal-body .green { color: var(--success); }
   .terminal-body .amber { color: var(--primary); }
+  /* 9-char action column to match style::status {action:<9} */
+  .terminal-body .act { display: inline-block; min-width: 9ch; }
 
   /* ---- Section ---- */
   section { padding: 80px 0; }
@@ -304,83 +315,83 @@
     margin-bottom: 40px;
   }
 
-  /* ---- Features ---- */
-  .features-grid {
+  /* ---- Features (2-col, no icon boxes) ---- */
+  .features-list {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 24px;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px 40px;
   }
-  .feature {
-    padding: 32px;
-    background: var(--n900);
-    border: 1px solid var(--n800);
-    border-radius: 12px;
-    transition: border-color 0.2s var(--ease-out);
+  .feat {
+    padding: 24px 0;
+    border-bottom: 1px solid var(--n800);
   }
-  .feature:hover { border-color: var(--primary); }
-  .feature-icon {
-    width: 40px;
-    height: 40px;
-    border-radius: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 1.2rem;
-    margin-bottom: 16px;
-  }
-  .feature h3 {
+  .feat h3 {
     font-family: var(--font-display);
     font-weight: 700;
-    font-size: 1.05rem;
-    margin-bottom: 8px;
+    font-size: 1rem;
+    margin-bottom: 6px;
   }
-  .feature p {
+  .feat p {
     font-size: 0.875rem;
     color: var(--n400);
     line-height: 1.6;
   }
 
   /* ---- How It Works ---- */
-  .steps {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 32px;
-    counter-reset: step;
+  .pipeline {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    margin-bottom: 24px;
   }
-  .step {
+  .pipeline-step {
+    flex: 1;
     position: relative;
-    padding-top: 48px;
+    padding: 20px;
+    background: var(--n900);
+    border: 1px solid var(--n800);
+    border-radius: 8px;
   }
-  .step::before {
-    counter-increment: step;
-    content: counter(step);
-    position: absolute;
-    top: 0;
-    font-family: var(--font-display);
-    font-weight: 900;
-    font-size: 1.5rem;
-    color: var(--primary);
-    opacity: 0.4;
-  }
-  .step h3 {
-    font-family: var(--font-display);
-    font-weight: 700;
-    font-size: 1rem;
-    margin-bottom: 8px;
-  }
-  .step p {
-    font-size: 0.875rem;
-    color: var(--n400);
-    line-height: 1.6;
-  }
-  .step code {
+  .pipeline-step h3 {
     font-family: var(--font-code);
     font-size: 0.8rem;
+    color: var(--primary);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 6px;
+  }
+  .pipeline-step p {
+    font-size: 0.82rem;
+    color: var(--n400);
+    line-height: 1.5;
+  }
+  .pipeline-arrow {
+    color: var(--n600);
+    font-size: 1.2rem;
+    margin-top: 28px;
+    flex-shrink: 0;
+  }
+
+  /* ---- Code Block ---- */
+  .code-block {
     background: var(--n900);
-    padding: 2px 6px;
-    border-radius: 4px;
+    border: 1px solid var(--n800);
+    border-radius: 8px;
+    overflow-x: auto;
+    max-width: 600px;
+  }
+  .code-block pre {
+    padding: 20px 24px;
+    margin: 0;
+    font-family: var(--font-code);
+    font-size: 0.82rem;
+    line-height: 1.8;
     color: var(--n300);
   }
+  .code-block .kw { color: var(--secondary); }
+  .code-block .str { color: var(--primary); }
+  .code-block .num { color: var(--n50); }
+  .code-block .cmt { color: var(--n600); }
 
   /* ---- Compatibility ---- */
   .compat-grid {
@@ -402,37 +413,13 @@
     font-size: 1rem;
     flex-shrink: 0;
   }
-  .compat-name {
-    font-weight: 600;
-    font-size: 0.9rem;
-  }
-  .compat-note {
-    font-size: 0.75rem;
-    color: var(--n500);
-  }
-
-  /* ---- Code Block ---- */
-  .code-block {
-    background: var(--n900);
-    border: 1px solid var(--n800);
-    border-radius: 8px;
-    padding: 20px 24px;
-    font-family: var(--font-code);
-    font-size: 0.82rem;
-    line-height: 1.8;
-    color: var(--n300);
-    overflow-x: auto;
-    margin-top: 24px;
-    max-width: 600px;
-  }
-  .code-block .kw { color: var(--secondary); }
-  .code-block .str { color: var(--primary); }
-  .code-block .cmt { color: var(--n600); }
+  .compat-name { font-weight: 600; font-size: 0.9rem; }
+  .compat-note { font-size: 0.75rem; color: var(--n500); }
 
   /* ---- CTA ---- */
   .cta-section {
     text-align: center;
-    padding: 100px 0;
+    padding: 80px 0;
     position: relative;
   }
   .cta-section::before {
@@ -449,15 +436,9 @@
   .cta-section h2 {
     font-family: var(--font-display);
     font-weight: 900;
-    font-size: 2.5rem;
-    letter-spacing: -0.03em;
-    margin-bottom: 16px;
-    position: relative;
-  }
-  .cta-section p {
-    color: var(--n400);
-    margin-bottom: 32px;
-    font-size: 1.05rem;
+    font-size: 2rem;
+    letter-spacing: -0.02em;
+    margin-bottom: 24px;
     position: relative;
   }
 
@@ -471,27 +452,26 @@
     justify-content: space-between;
     align-items: center;
   }
-  footer p {
-    font-size: 0.8rem;
-    color: var(--n600);
-  }
+  footer p { font-size: 0.8rem; color: var(--n600); }
   .footer-links {
     display: flex;
     gap: 20px;
     list-style: none;
   }
-  .footer-links a {
-    font-size: 0.8rem;
-    color: var(--n500);
-  }
+  .footer-links a { font-size: 0.8rem; color: var(--n500); }
   .footer-links a:hover { color: var(--n50); }
 
   /* ---- Responsive ---- */
+  @media (max-width: 1024px) {
+    .features-list { grid-template-columns: 1fr; }
+    .pipeline { flex-direction: column; }
+    .pipeline-arrow { transform: rotate(90deg); align-self: center; margin: 0; }
+  }
   @media (max-width: 768px) {
-    .hero { padding: 120px 0 60px; }
-    .features-grid, .steps, .compat-grid { grid-template-columns: 1fr; }
+    .hero { padding: 120px 0 40px; }
+    .compat-grid { grid-template-columns: 1fr; }
     nav .nav-links .hide-mobile { display: none; }
-    footer .container { flex-direction: column; gap: 12px; }
+    footer .container { flex-direction: column; gap: 12px; text-align: center; }
   }
 
   /* ---- Animations ---- */
@@ -501,10 +481,7 @@
       transform: translateY(16px);
       transition: opacity 0.5s var(--ease-out), transform 0.5s var(--ease-out);
     }
-    .fade-in.visible {
-      opacity: 1;
-      transform: translateY(0);
-    }
+    .fade-in.visible { opacity: 1; transform: translateY(0); }
   }
   @media (prefers-reduced-motion: reduce) {
     .fade-in { opacity: 1; transform: none; }
@@ -514,7 +491,7 @@
 <body>
 
 <!-- Nav -->
-<nav>
+<nav aria-label="Main navigation">
   <div class="container">
     <a href="#" class="nav-logo"><span>gif</span>term</a>
     <ul class="nav-links">
@@ -529,150 +506,144 @@
 <!-- Hero -->
 <header class="hero">
   <div class="container">
-    <h1 class="fade-in">Your terminal,<br><span>now with vibes.</span></h1>
-    <p class="subtitle fade-in">Play animated GIFs natively in kitty-protocol terminals. Fire-and-forget animations that persist on the GPU.</p>
+    <h1 class="fade-in">Play GIFs in<br><span>your terminal.</span></h1>
+    <p class="subtitle fade-in">One command. The GIF plays. gifterm exits. The animation lives on the GPU. No browser, no electron.</p>
     <div class="hero-actions fade-in">
       <a class="btn btn-primary" href="#install">Install</a>
       <a class="btn btn-secondary" href="https://github.com/nalediym/gifterm">View source</a>
     </div>
-    <div class="install-block fade-in" onclick="copyInstall(this)">
-      <span class="prompt">$</span>
+    <div class="install-block fade-in" role="button" tabindex="0" aria-label="Copy install command: cargo install gifterm" onclick="copyInstall(this)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();copyInstall(this)}">
+      <span class="prompt" aria-hidden="true">$</span>
       <span class="cmd">cargo install gifterm</span>
-      <span class="copied" id="copied-msg">Copied!</span>
+      <span class="copied" aria-live="polite">Copied!</span>
     </div>
   </div>
 </header>
 
 <!-- Terminal Demo -->
-<div class="terminal-section">
+<section class="terminal-section" aria-label="Terminal demo">
   <div class="container">
-    <div class="terminal fade-in">
-      <div class="terminal-bar">
+    <div class="terminal fade-in" role="img" aria-label="Terminal showing gifterm decoding, caching, and playing a GIF animation">
+      <div class="terminal-bar" aria-hidden="true">
         <div class="dot r"></div>
         <div class="dot y"></div>
         <div class="dot g"></div>
-        <div class="terminal-title">Terminal</div>
       </div>
       <div class="terminal-body">
         <span class="p">$</span> <span class="c">gifterm lofi-rain.gif --width 400</span><br>
-        <span class="dim">gifterm</span> <span class="teal">decoding</span> lofi-rain.gif<br>
-        <span class="dim">gifterm</span> <span class="teal">scaling </span> 640x480 -&gt; 400x300 (lanczos3)<br>
-        <span class="dim">gifterm</span> <span class="teal">decoded </span> 47/47 frames<br>
-        <span class="dim">gifterm</span> <span class="green">cached </span> 47 frames (1840 KB) -&gt; ~/.cache/gifterm/a1b2c3d4<br>
-        <span class="dim">gifterm</span> <span class="teal">sending </span> 47/47 frames<br>
-        <span class="dim">gifterm</span> <span class="green">playing</span> 47 frames, loop=infinite, id=1001<br>
+        <span class="dim">gifterm</span> <span class="teal act">decoding</span> lofi-rain.gif<br>
+        <span class="dim">gifterm</span> <span class="teal act">scaling</span> 640x480 -&gt; 400x300 (lanczos3)<br>
+        <span class="dim">gifterm</span> <span class="teal act">decoded</span> 47/47 frames<br>
+        <span class="dim">gifterm</span> <span class="green act">cached</span> 47 frames (1840 KB)<br>
+        <span class="dim">gifterm</span> <span class="teal act">sending</span> 47 frames, 400x300<br>
+        <span class="dim">gifterm</span> <span class="green act">playing</span> 47 frames, loop=infinite, id=1001<br>
         <br>
         <span class="p">$</span> <span class="c">gifterm pixel-cat.gif</span><br>
-        <span class="dim">gifterm</span> <span class="amber">cache hit</span> 12 frames, 120x120<br>
-        <span class="dim">gifterm</span> <span class="green">playing</span> 12 frames, loop=infinite, id=1002<br>
+        <span class="dim">gifterm</span> <span class="amber act">cache hit</span> 12 frames, 120x120<br>
+        <span class="dim">gifterm</span> <span class="green act">playing</span> 12 frames, loop=infinite, id=1002<br>
       </div>
     </div>
   </div>
-</div>
+</section>
 
 <!-- Features -->
-<section id="features">
+<section id="features" class="divider">
   <div class="container">
-    <p class="section-label fade-in">Features</p>
+    <p class="section-label fade-in">What it does</p>
     <h2 class="section-title fade-in">Built for terminal natives.</h2>
-    <p class="section-subtitle fade-in">One command. The GIF plays. gifterm exits. The animation lives on.</p>
 
-    <div class="features-grid">
-      <div class="feature fade-in">
-        <div class="feature-icon" style="background: var(--primary-dim); color: var(--primary);">&#9618;</div>
-        <h3>GPU-native</h3>
+    <div class="features-list">
+      <div class="feat fade-in">
+        <h3>GPU-native playback</h3>
         <p>Animations persist in kitty's GPU memory after gifterm exits. Like an <code>&lt;img&gt;</code> tag for your terminal. Clear the screen to dismiss.</p>
       </div>
-      <div class="feature fade-in">
-        <div class="feature-icon" style="background: var(--secondary-dim, #5BB8B01A); color: var(--secondary);">&#8644;</div>
+      <div class="feat fade-in">
         <h3>Content-addressed cache</h3>
-        <p>Frames are decoded once, cached by SHA-256 hash. Second play loads instantly from disk, no decode step. Width variants get their own cache key.</p>
+        <p>Frames are decoded once, cached by SHA-256 hash. Second play skips decode entirely. Width variants get their own cache key.</p>
       </div>
-      <div class="feature fade-in">
-        <div class="feature-icon" style="background: #7EC88B1A; color: var(--success);">&#9656;</div>
+      <div class="feat fade-in">
         <h3>Fire and forget</h3>
-        <p>gifterm exits immediately after transmitting frames. The animation loops on the GPU independently. Multiple GIFs can run simultaneously.</p>
+        <p>gifterm exits immediately after transmitting frames. The animation loops on the GPU independently. Multiple GIFs run simultaneously.</p>
       </div>
-      <div class="feature fade-in">
-        <div class="feature-icon" style="background: var(--primary-dim); color: var(--primary);">&#8674;</div>
-        <h3>Smart scaling</h3>
-        <p>Pass <code>--width 400</code> and gifterm scales with Lanczos3 filtering. Original aspect ratio preserved. Scaled frames are cached separately.</p>
+      <div class="feat fade-in">
+        <h3>Lanczos3 scaling</h3>
+        <p>Pass <code>--width 400</code> and gifterm scales with Lanczos3 filtering. Original aspect ratio preserved. Scaled frames cached separately.</p>
       </div>
-      <div class="feature fade-in">
-        <div class="feature-icon" style="background: #5BB8B01A; color: var(--secondary);">&#9881;</div>
-        <h3>Zero runtime deps</h3>
-        <p>Single static Rust binary. No Python, no Node, no runtime dependencies. Compiles to one file you can drop anywhere.</p>
+      <div class="feat fade-in">
+        <h3>Single static binary</h3>
+        <p>Rust. No Python, no Node, no runtime dependencies. Compiles to one file you can drop on any machine.</p>
       </div>
-      <div class="feature fade-in">
-        <div class="feature-icon" style="background: #7EC88B1A; color: var(--success);">&#9733;</div>
+      <div class="feat fade-in">
         <h3>Library + CLI</h3>
-        <p>Use as a CLI tool or import as a Rust crate. The library compiles without the CLI feature, no clap dependency. Works with any kitty-protocol integration.</p>
+        <p>Import as a Rust crate without the CLI dependency. The library targets <code>wasm32</code>. Embed GIF playback in your own terminal tools.</p>
       </div>
     </div>
   </div>
 </section>
 
 <!-- How It Works -->
-<section id="how-it-works" style="border-top: 1px solid var(--n800);">
+<section id="how-it-works" class="divider">
   <div class="container">
     <p class="section-label fade-in">How it works</p>
     <h2 class="section-title fade-in">Three steps, then gifterm gets out of the way.</h2>
 
-    <div class="steps">
-      <div class="step fade-in">
+    <div class="pipeline fade-in">
+      <div class="pipeline-step">
         <h3>Decode</h3>
-        <p>GIF frames are decoded into raw RGBA buffers using the <code>image</code> crate. Optionally scaled down with Lanczos3 filtering for crisp results at any width.</p>
+        <p>GIF frames &rarr; raw RGBA buffers via the <code>image</code> crate. Optional Lanczos3 downscale.</p>
       </div>
-      <div class="step fade-in">
+      <span class="pipeline-arrow" aria-hidden="true">&rarr;</span>
+      <div class="pipeline-step">
         <h3>Cache</h3>
-        <p>Decoded frames are written to a content-addressed cache at <code>~/.cache/gifterm/</code>, keyed by SHA-256 of the source file. Next time, decode is skipped entirely.</p>
+        <p>Frames written to <code>~/.cache/gifterm/</code>, keyed by SHA-256. Next time, decode is skipped.</p>
       </div>
-      <div class="step fade-in">
+      <span class="pipeline-arrow" aria-hidden="true">&rarr;</span>
+      <div class="pipeline-step">
         <h3>Transmit</h3>
-        <p>Frames are sent to the terminal via the kitty graphics protocol using temp-file transfer. The terminal assembles them into a looping animation on the GPU.</p>
+        <p>Frames sent via kitty graphics protocol. Terminal assembles a looping animation on the GPU.</p>
       </div>
     </div>
 
     <div class="code-block fade-in">
-      <span class="cmt">// Library usage</span><br>
-      <span class="kw">use</span> std::path::Path;<br>
-      <br>
-      <span class="kw">let</span> path = Path::new(<span class="str">"animation.gif"</span>);<br>
-      <span class="kw">let</span> (meta, frames) = gifterm::load_frames(path, Some(<span class="str">400</span>))?;<br>
-      gifterm::play(&amp;meta, &amp;frames)?;
+      <pre><code><span class="cmt">// Library usage</span>
+<span class="kw">use</span> std::path::Path;
+
+<span class="kw">let</span> path = Path::new(<span class="str">"animation.gif"</span>);
+<span class="kw">let</span> (meta, frames) = gifterm::load_frames(path, Some(<span class="num">400</span>))?;
+gifterm::play(&amp;meta, &amp;frames)?;</code></pre>
     </div>
   </div>
 </section>
 
-<!-- Compatibility -->
-<section id="install" style="border-top: 1px solid var(--n800);">
+<!-- Install + Compatibility -->
+<section id="install" class="divider">
   <div class="container">
     <p class="section-label fade-in">Install</p>
     <h2 class="section-title fade-in">One command.</h2>
     <p class="section-subtitle fade-in">gifterm works with any terminal that supports the kitty graphics protocol.</p>
 
-    <div class="code-block fade-in" style="max-width: 400px; margin-bottom: 40px; font-size: 0.9rem;">
-      <span style="color: var(--primary);">$</span> cargo install gifterm
+    <div class="code-block fade-in" style="max-width: 360px; margin-bottom: 48px;">
+      <pre style="font-size: 0.9rem;"><code><span style="color: var(--primary);">$</span> cargo install gifterm</code></pre>
     </div>
 
-    <p class="section-label fade-in" style="margin-top: 48px;">Compatible terminals</p>
+    <p class="section-label fade-in">Compatible terminals</p>
     <div class="compat-grid fade-in">
       <div class="compat-item">
-        <span class="compat-check">&#10003;</span>
+        <span class="compat-check" aria-hidden="true">&#10003;</span>
         <div>
           <div class="compat-name">kitty</div>
           <div class="compat-note">Full support</div>
         </div>
       </div>
       <div class="compat-item">
-        <span class="compat-check">&#10003;</span>
+        <span class="compat-check" aria-hidden="true">&#10003;</span>
         <div>
           <div class="compat-name">WezTerm</div>
           <div class="compat-note">Full support</div>
         </div>
       </div>
       <div class="compat-item">
-        <span class="compat-check" style="color: var(--primary);">&#9679;</span>
+        <span class="compat-check" aria-hidden="true" style="color: var(--primary);">&#9679;</span>
         <div>
           <div class="compat-name">Konsole</div>
           <div class="compat-note">Partial support</div>
@@ -681,16 +652,15 @@
     </div>
 
     <p style="margin-top: 24px; font-size: 0.85rem; color: var(--n500);" class="fade-in">
-      tmux blocks the graphics protocol by default. Set <code style="font-family: var(--font-code); background: var(--n900); padding: 2px 6px; border-radius: 4px; font-size: 0.8rem;">allow-passthrough on</code> in your tmux.conf, or run gifterm in a raw terminal window.
+      tmux blocks the graphics protocol by default. Set <code>allow-passthrough on</code> in your tmux.conf, or run gifterm in a raw terminal window.
     </p>
   </div>
 </section>
 
 <!-- CTA -->
-<section class="cta-section" style="border-top: 1px solid var(--n800);">
+<section class="cta-section divider">
   <div class="container">
-    <h2 class="fade-in">Terminals deserve<br>to feel <span style="color: var(--primary);">alive</span>.</h2>
-    <p class="fade-in">Lofi vibes. Pixel art. Ambient animation. No browser tab required.</p>
+    <h2 class="fade-in">Try it.</h2>
     <div class="hero-actions fade-in" style="position: relative;">
       <a class="btn btn-primary" href="https://crates.io/crates/gifterm">crates.io</a>
       <a class="btn btn-secondary" href="https://github.com/nalediym/gifterm">GitHub</a>
@@ -701,7 +671,7 @@
 <!-- Footer -->
 <footer>
   <div class="container">
-    <p>gifterm v0.1.1 &middot; MIT License</p>
+    <p>gifterm &middot; MIT License</p>
     <ul class="footer-links">
       <li><a href="https://github.com/nalediym/gifterm">Source</a></li>
       <li><a href="https://crates.io/crates/gifterm">crates.io</a></li>
@@ -711,7 +681,6 @@
 </footer>
 
 <script>
-// Copy install command
 function copyInstall(el) {
   navigator.clipboard.writeText('cargo install gifterm').then(() => {
     const msg = el.querySelector('.copied');
@@ -720,12 +689,9 @@ function copyInstall(el) {
   });
 }
 
-// Fade-in on scroll
 const observer = new IntersectionObserver((entries) => {
   entries.forEach(entry => {
-    if (entry.isIntersecting) {
-      entry.target.classList.add('visible');
-    }
+    if (entry.isIntersecting) entry.target.classList.add('visible');
   });
 }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
 
